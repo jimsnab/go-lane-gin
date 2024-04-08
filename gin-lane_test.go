@@ -94,7 +94,7 @@ func TestOneRequest(t *testing.T) {
 	tl, _ := testServer(t, GinLaneOptionLogNone)
 	testSendEcho(t)
 
-	if !tl.FindEventText("DEBUG\tPOST \"/echo\" go-lane-gin.testServer.func1 handlers:3") {
+	if !tl.FindEventText("DEBUG\tPOST \"/echo\" github.com/jimsnab/go-lane-gin.testServer.func1 handlers:3") {
 		t.Fatal("debug not hooked")
 	}
 	if !tl.FindEventText("INFO\techo request received") {
@@ -108,6 +108,12 @@ func TestRequestResult(t *testing.T) {
 	testSendEcho(t)
 	if !tl.FindEventText("TRACE\trequest: client=127.0.0.1 POST \"/echo\" status 200") {
 		t.Fatal("request result not logged")
+	}
+	if strings.Contains(tl.EventsToString(), "request-data") {
+		t.Fatal("request data should not be logged")
+	}
+	if strings.Contains(tl.EventsToString(), "response-data") {
+		t.Fatal("response data should not be logged")
 	}
 }
 

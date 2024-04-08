@@ -93,7 +93,7 @@ func (glh *ginRequestHandler) ginLaneMiddleware(c *gin.Context) {
 	}
 
 	var collector *responseCollector
-	if (glh.opt&GinLaneOptionDumpResponse | GinLaneOptionDumpResponseBody) != 0 {
+	if (glh.opt & (GinLaneOptionDumpResponse | GinLaneOptionDumpResponseBody)) != 0 {
 		collector = &responseCollector{
 			ResponseWriter: c.Writer,
 			req:            c.Request,
