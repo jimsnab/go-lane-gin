@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httputil"
+	"regexp"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -46,6 +47,17 @@ const (
 )
 
 var crlf = []byte("\r\n")
+var kRedactExp = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)^\s*authorization\s*:(.*)$`),
+	regexp.MustCompile(`(?i)^.*-token\s*:(.*)$`),
+	regexp.MustCompile(`(?i)^.*-auth\s*:(.*)$`),
+	regexp.MustCompile(`(?i)^.*-key\s*:(.*)$`),
+	regexp.MustCompile(`(?i)^.*-sess\s*:(.*)$`),
+	regexp.MustCompile(`(?i)^.*-secret\s*:(.*)$`),
+}
+
+const kPanicAnsi = "\x1b[31m"
+const kColorOffAnsi = "\x1b[0m"
 
 var ginGlobalsInitialized sync.Once
 
@@ -71,7 +83,7 @@ func NewGinRouter(l lane.Lane, opt GinLaneOptions) (engine *gin.Engine) {
 	return
 }
 
-// Attaches the lane middleware to the specified gin engine (aka router)
+// Attaches the lane logging/context middleware to the specified gin engine (aka router)
 func UseLaneMiddleware(engine *gin.Engine, l lane.Lane, opt GinLaneOptions) {
 	initGin(l)
 
@@ -125,11 +137,23 @@ func (glh *ginRequestHandler) ginLaneMiddleware(c *gin.Context) {
 	}
 }
 
+func redact(text string) string {
+	for _, exp := range kRedactExp {
+		matches := exp.FindAllStringSubmatch(text, -1)
+		if len(matches) == 1 {
+			removal := strings.TrimSpace(matches[0][1])
+			text = strings.ReplaceAll(text, removal, "********")
+		}
+	}
+	return text
+}
+
 func dump(l lane.Lane, context string, raw []byte) {
 	lines := strings.Split(string(raw), "\n")
 	for _, line := range lines {
-		if strings.TrimSpace(line) != "" {
-			l.Tracef("%s: %s", context, strings.TrimRight(line, "\r"))
+		text := strings.ReplaceAll(line, "\r", "")
+		if strings.TrimSpace(text) != "" {
+			l.Tracef("%s: %s", context, redact(text))
 		}
 	}
 }
@@ -144,36 +168,44 @@ func (lw *laneWriter) Write(data []byte) (written int, err error) {
 		pos := 0
 		by := lw.buf.Bytes()
 		text := ""
-		for pos < len(by) {
+		done := false
+		for {
 			ch, sz := utf8.DecodeRune(by[pos:])
 			if sz == 0 {
+				done = true
 				break
 			}
 			pos = pos + sz
 			if ch == '\n' {
-				text = string(by[:(pos - sz)])
-				if pos < len(by) {
-					right := make([]byte, len(by)-pos)
-					copy(right, by[pos:])
-					lw.buf.Reset()
-					_, terr := lw.buf.Write(right)
-					if terr != nil {
-						err = terr
-						return
-					}
+				text = strings.ReplaceAll(string(by[:(pos-sz)]), "\r", "")
+				right := make([]byte, len(by)-pos)
+				copy(right, by[pos:])
+				lw.buf.Reset()
+				_, terr := lw.buf.Write(right)
+				if terr != nil {
+					err = terr
+					return
 				}
 				break
 			}
 		}
 
-		if text == "" {
+		if done {
 			break
 		}
 
+		// remove coloring that is sent even when coloring is off
+		text = strings.ReplaceAll(text, kPanicAnsi, "")
+		text = strings.ReplaceAll(text, kColorOffAnsi, "")
+
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+
 		if lw.isError {
-			lw.l.Error(text)
+			lw.l.Error(redact(text))
 		} else {
-			lw.l.Debug(text)
+			lw.l.Debug(redact(text))
 		}
 	}
 
