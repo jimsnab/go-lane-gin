@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -21,7 +22,10 @@ func testServer(t *testing.T, opt GinLaneOptions, crash bool) (tl lane.TestingLa
 	tl.WantDescendantEvents(true)
 	tl.AddTee(lane.NewLogLane(context.Background()))
 
+	ginGlobalsInitialized.Store(false)
+
 	router := NewGinRouter(tl, opt)
+	tl.Trace("created gin router for test")
 
 	router.POST("/echo", func(c *gin.Context) {
 		if crash {
@@ -64,6 +68,7 @@ func testServer(t *testing.T, opt GinLaneOptions, crash bool) (tl lane.TestingLa
 	t.Cleanup(func() {
 		srv.Shutdown(tl)
 		wg.Wait()
+		srv.Close()
 	})
 	return
 }
@@ -76,6 +81,9 @@ func testSendEcho(t *testing.T, crash bool) {
 	reader := strings.NewReader(string(body))
 	resp, err := http.Post("http://localhost:8600/echo", "application/json", reader)
 	if err != nil {
+		if crash && errors.Is(err, io.EOF) {
+			return
+		}
 		t.Fatal(err)
 	}
 
@@ -124,7 +132,8 @@ func TestCrashRequest(t *testing.T) {
 	tl, _ := testServer(t, GinLaneOptionLogNone, true)
 	testSendEcho(t, true)
 
-	if !strings.Contains(tl.EventsToString(), "\ttestServer.func1: panic(\"forced crash\")") {
+	text := tl.EventsToString()
+	if !strings.Contains(text, "\ttestServer.func1: panic(\"forced crash\")") {
 		t.Fatal("no stack")
 	}
 }

@@ -8,7 +8,7 @@ import (
 	"net/http/httputil"
 	"regexp"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
@@ -59,18 +59,18 @@ var kRedactExp = []*regexp.Regexp{
 const kPanicAnsi = "\x1b[31m"
 const kColorOffAnsi = "\x1b[0m"
 
-var ginGlobalsInitialized sync.Once
+var ginGlobalsInitialized atomic.Bool
 
 func initGin(l lane.Lane) {
 	// gin's got multiple ways of logging and some of them are singletons
-	ginGlobalsInitialized.Do(func() {
+	if !ginGlobalsInitialized.Swap(true) {
 		gin.DebugPrintRouteFunc = func(httpMethod, absolutePath, handlerName string, nuHandlers int) {
 			l.Debugf("%s %#v %s handlers:%d", httpMethod, absolutePath, handlerName, nuHandlers)
 		}
 
 		gin.DefaultWriter = &laneWriter{l: l}
 		gin.DefaultErrorWriter = &laneWriter{l: l, isError: true}
-	})
+	}
 }
 
 // Provides a handler that ensures each gin request is associated with a lane
