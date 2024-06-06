@@ -4,7 +4,7 @@ go 1.22.0
 
 require (
 	github.com/gin-gonic/gin v1.10.0
-	github.com/jimsnab/go-lane v1.23.1
+	github.com/jimsnab/go-lane v1.23.2
 )
 
 require (
