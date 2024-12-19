@@ -38,3 +38,76 @@ becomes a lane. Handlers can access the lane instance from the request:
 
 Because a lane instance is a context, it can also be used for cancelation of
 long-running requests, per the typical pattern of Go contexts.
+
+## Canceling via Context
+A utility function called `RunWithContext` provides a function that works like
+`gin.Run()`, but will stop the server when the context is canceled.
+
+Comparison example:
+
+```go
+package main
+
+import (
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/jimsnab/go-lane"
+	gin_lane "github.com/jimsnab/go-lane-gin"
+)
+
+func main() {
+	// Initialize a lane instance (a lane wraps context.Context)
+	l := lane.NewLogLane()
+
+	// Example 1: Standard gin.Run()
+	l.Infof("Using standard gin.Run()...")
+	standardGinExample(l)
+
+	// Example 2: RunWithContext using go-lane-gin
+	l.Infof("Using go-lane-gin.RunWithContext()...")
+	runWithContextExample(l)
+}
+
+// Standard gin.Run() example
+func standardGinExample(l lane.Lane) {
+	r := gin.Default()
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(200, gin.H{"message": "pong"})
+	})
+
+	// Start server in a goroutine
+	go func() {
+		if err := r.Run(":8080"); err != nil {
+			l.Infof("Standard gin.Run() error: %v", err)
+		}
+	}()
+
+	time.Sleep(3 * time.Second) // Simulate some work
+	l.Infof("Standard gin.Run() does not support context cancellation.")
+}
+
+// RunWithContext example using go-lane-gin
+func runWithContextExample(l lane.Lane) {
+	// Derive a new lane to be the context with timeout for cancellation
+	l, cancel := l.DeriveWithTimeout(5 * time.Second)
+	defer cancel()
+
+	// Create the Gin engine
+	r := gin.Default()
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(200, gin.H{"message": "pong"})
+	})
+
+	// Use the RunWithContext function from go-lane-gin
+	err := gin_lane.RunWithContext(l, r, ":8081")
+	if err != nil {
+		if errors.Is(err, http.ErrServerClosed) {
+			l.Infof("Server shut down gracefully")
+		} else {
+			l.Infof("RunWithContext error: %v", err)
+		}
+	}
+}
+
+```
