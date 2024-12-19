@@ -12,12 +12,15 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jimsnab/go-lane"
 )
 
 func testServer(t *testing.T, opt GinLaneOptions, crash bool) (tl lane.TestingLane, srv *http.Server) {
+	time.Sleep(time.Millisecond * 100) // allow localhost port to settle in
+
 	tl = lane.NewTestingLane(context.Background())
 	tl.WantDescendantEvents(true)
 	tl.AddTee(lane.NewLogLane(context.Background()))
@@ -84,7 +87,7 @@ func testSendEcho(t *testing.T, crash bool) {
 		if crash && errors.Is(err, io.EOF) {
 			return
 		}
-		t.Fatal(err)
+		t.Fatalf("crash:%t err:%v", crash, err)
 	}
 
 	if resp.StatusCode == http.StatusOK {
